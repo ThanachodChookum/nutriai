@@ -10,8 +10,10 @@ import {
 import { Message, AddMealModalProps } from './types';
 import {
   RefreshCw, Wifi, WifiOff, Watch, Heart,
-  Footprints, Moon, TrendingUp,
+  Footprints, Moon, TrendingUp, Settings
 } from 'lucide-react';
+import { SmartwatchSetupPage } from './components/SmartwatchSetupPage';
+import { bluetoothService } from './service/BluetoothService';
 interface DBMeal {
   _id: string;
   name: string;
@@ -1060,17 +1062,35 @@ function WorkoutCard({ ex, onDelete, userId }: { ex: ExerciseEntry; onDelete: (i
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function ExerciseLogTab({ userId }: { userId: string }) {
-  const [selectedDevice, setSelectedDevice] = useState<DeviceId>('apple_watch');
+  const [selectedDevice, setSelectedDevice] = useState<string>('apple_watch');
   const [connected, setConnected] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [metrics, setMetrics] = useState<WatchMetrics>(MOCK_DATA.apple_watch.metrics);
   const [exercises, setExercises] = useState<ExerciseEntry[]>([]);
+  const [showSetup, setShowSetup] = useState(false);
+  const [customDevices, setCustomDevices] = useState<any[]>([]);
+
+  const loadCustomDevices = useCallback(() => {
+    if (!userId || userId === 'demo') return;
+    const saved = localStorage.getItem(`nutriai_smartwatches_${userId}`);
+    if (saved) {
+      try {
+        setCustomDevices(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadCustomDevices();
+  }, [loadCustomDevices]);
+
 
   // โหลด exercises จาก DB หรือ mock
   const fetchExercises = useCallback(async () => {
     if (!userId || userId === 'demo') {
-      const mockActivities = MOCK_DATA[selectedDevice].activities.map((a, i) => ({
+      const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+      const mockActivities = MOCK_DATA[mockKey as DeviceId].activities.map((a, i) => ({
         ...a,
         id: `${selectedDevice}_${i}`,
       }));
@@ -1094,15 +1114,16 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
           source: e.source ?? 'watch',
         })));
       } else {
-        // ถ้า DB ว่างให้แสดง mock ของ device ที่เลือก
-        const mockActivities = MOCK_DATA[selectedDevice].activities.map((a, i) => ({
+        const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+        const mockActivities = MOCK_DATA[mockKey as DeviceId].activities.map((a, i) => ({
           ...a,
           id: `${selectedDevice}_${i}`,
         }));
         setExercises(mockActivities);
       }
     } catch {
-      const mockActivities = MOCK_DATA[selectedDevice].activities.map((a, i) => ({
+      const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+      const mockActivities = MOCK_DATA[mockKey as DeviceId].activities.map((a, i) => ({
         ...a,
         id: `${selectedDevice}_${i}`,
       }));
@@ -1112,8 +1133,52 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
 
   useEffect(() => {
     fetchExercises();
-    setMetrics(MOCK_DATA[selectedDevice].metrics);
-  }, [fetchExercises, selectedDevice]);
+    
+    // Update metrics, mixing mock data with real custom device data if applicable
+    const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+    let newMetrics = { ...MOCK_DATA[mockKey as DeviceId].metrics };
+    
+    const cDev = customDevices.find(d => d.id === selectedDevice);
+    if (cDev && cDev.metrics) {
+      if (cDev.metrics.heartRate) {
+        newMetrics.avgHeartRate = cDev.metrics.heartRate;
+        newMetrics.peakHeartRate = Math.max(newMetrics.peakHeartRate, cDev.metrics.heartRate + 20);
+      }
+    }
+    setMetrics(newMetrics);
+  }, [fetchExercises, selectedDevice, customDevices]);
+
+  // ซิงค์ค่า Heart Rate อัตโนมัติ (real-time & demo simulated)
+  useEffect(() => {
+    if (!showSetup) {
+      bluetoothService.onHeartRateChange((data) => {
+        setMetrics((prev) => ({
+          ...prev,
+          avgHeartRate: data.heartRate,
+          peakHeartRate: Math.max(prev.peakHeartRate, data.heartRate),
+        }));
+      });
+    }
+
+    let interval: ReturnType<typeof setInterval>;
+    const isMockDevice = ['apple_watch', 'garmin', 'samsung', 'fitbit', 'mi_band'].includes(selectedDevice);
+    if (userId === 'demo' || isMockDevice) {
+      let currentHr = 80;
+      interval = setInterval(() => {
+        currentHr += Math.floor(Math.random() * 7) - 3;
+        currentHr = Math.min(160, Math.max(65, currentHr));
+        setMetrics((prev) => ({
+          ...prev,
+          avgHeartRate: currentHr,
+          peakHeartRate: Math.max(prev.peakHeartRate, currentHr),
+        }));
+      }, 3500);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [userId, selectedDevice, showSetup]);
 
   // Sync handler — เรียก /api/exercises/sync จริง หรือ simulate
   const handleSync = async () => {
@@ -1131,12 +1196,19 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
         // setExercises(data.exercises);
         // ─── Simulate (ลบออกเมื่อต่อ API จริง) ─────────────────────────────
         await new Promise(r => setTimeout(r, 1800));
-        const fresh = MOCK_DATA[selectedDevice];
-        setMetrics(fresh.metrics);
+        const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+        const fresh = MOCK_DATA[mockKey as DeviceId];
+        let newMetrics = { ...fresh.metrics };
+        const cDev = customDevices.find(d => d.id === selectedDevice);
+        if (cDev && cDev.metrics && cDev.metrics.heartRate) {
+           newMetrics.avgHeartRate = cDev.metrics.heartRate;
+        }
+        setMetrics(newMetrics);
         setExercises(fresh.activities.map((a, i) => ({ ...a, id: `${selectedDevice}_${i}` })));
       } else {
         await new Promise(r => setTimeout(r, 1800));
-        const fresh = MOCK_DATA[selectedDevice];
+        const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
+        const fresh = MOCK_DATA[mockKey as DeviceId];
         setMetrics(fresh.metrics);
         setExercises(fresh.activities.map((a, i) => ({ ...a, id: `${selectedDevice}_${i}` })));
       }
@@ -1164,6 +1236,26 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+
+      <AnimatePresence>
+        {showSetup && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed inset-0 z-50 overflow-y-auto bg-background-light dark:bg-background-dark"
+          >
+            <SmartwatchSetupPage 
+              userId={userId} 
+              onClose={() => setShowSetup(false)} 
+              onConnect={(dev) => {
+                loadCustomDevices();
+                setSelectedDevice(dev.id);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
@@ -1215,6 +1307,28 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
               {selectedDevice === device.id && <span className="text-[10px] font-normal opacity-70">({device.model})</span>}
             </button>
           ))}
+          {customDevices.map(device => (
+            <button
+              key={device.id}
+              onClick={() => setSelectedDevice(device.id)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                selectedDevice === device.id
+                  ? 'border-purple-500 bg-purple-500/10 text-purple-500'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-purple-500/40 hover:text-purple-500'
+              }`}
+            >
+              <div className={`size-1.5 rounded-full ${selectedDevice === device.id ? 'bg-purple-500' : 'bg-slate-300'}`} />
+              {device.name}
+              {selectedDevice === device.id && <span className="text-[10px] font-normal opacity-70">({device.model})</span>}
+            </button>
+          ))}
+          <button
+            onClick={() => setShowSetup(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 hover:border-primary/40 hover:text-primary transition-all"
+          >
+            <Settings className="size-3" />
+            เพิ่มอุปกรณ์
+          </button>
         </div>
         <p className="text-[11px] text-slate-400 mt-3">
           ซิงค์ล่าสุด: {lastSyncStr} · ข้อมูลจะอัปเดตอัตโนมัติทุก 15 นาที
