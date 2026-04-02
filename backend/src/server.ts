@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose, { Schema, Document } from 'mongoose';
+import multer from 'multer';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -183,8 +185,14 @@ app.patch('/api/users/:id', async (req: Request, res: Response) => {
 app.get('/api/meals', async (req: Request, res: Response) => {
   const { userId, date } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId is required' });
-  const start = date ? new Date(date as string) : new Date();
-  start.setHours(0, 0, 0, 0);
+  // Parse date as LOCAL time (not UTC) to avoid timezone off-by-one
+  let start: Date;
+  if (date) {
+    const [y, m, d] = (date as string).split('-').map(Number);
+    start = new Date(y, m - 1, d, 0, 0, 0, 0);
+  } else {
+    start = new Date(); start.setHours(0, 0, 0, 0);
+  }
   const end = new Date(start); end.setHours(23, 59, 59, 999);
   try {
     const meals = await Meal.find({ userId, date: { $gte: start, $lte: end } }).sort({ date: 1 });
@@ -346,13 +354,134 @@ app.delete('/api/exercises/:id', async (req: Request, res: Response) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// ANALYZE FOOD WITH GROQ VISION
+// ═════════════════════════════════════════════════════════════════════════════
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/api/analyze-food', upload.single('image'), async (req: Request & { file?: { path: string; mimetype: string; originalname: string; size: number } }, res: Response) => {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'Missing GROQ_API_KEY' });
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'No image uploaded' });
+
+  try {
+    // อ่านไฟล์รูปเป็น base64
+    const imageBuffer = fs.readFileSync(file.path);
+    const base64Image = imageBuffer.toString('base64');
+    const mimeType = file.mimetype || 'image/jpeg';
+
+    console.log('🍽️  Analyzing food image with Groq Vision...');
+
+    // เรียก Groq Vision API
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64Image}` },
+              },
+              {
+                type: 'text',
+                text: `You are a nutrition expert. Analyze this food image and estimate its nutritional content.
+
+Respond ONLY with valid JSON (no markdown, no explanation), exactly in this format:
+{
+  "name": "<English food name>",
+  "type": "<Breakfast|Lunch|Dinner|Snack>",
+  "calories": <number>,
+  "protein": <number in grams>,
+  "carbs": <number in grams>,
+  "fat": <number in grams>,
+  "water": <number in liters, e.g. 0.2>
+}`,
+              },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 512,
+      }),
+    });
+
+    const groqData = await groqRes.json();
+
+    if (!groqRes.ok) {
+      console.error('Groq API error:', groqData);
+      return res.status(502).json({ error: groqData.error?.message ?? 'Groq Vision API error' });
+    }
+
+    const text = groqData.choices?.[0]?.message?.content ?? '{}';
+    console.log('🤖 Groq response:', text);
+
+    let aiResult: { name: string; type: string; calories: number; protein: number; carbs: number; fat: number; water: number };
+    try {
+      // ลบ markdown code block ออกถ้ามี
+      const cleaned = text.replace(/```json\n?|```/g, '').trim();
+      aiResult = JSON.parse(cleaned);
+    } catch {
+      console.error('Failed to parse AI response:', text);
+      return res.status(500).json({ error: 'AI returned invalid JSON', raw: text });
+    }
+
+    // ใช้ meal type ที่ user เลือก (ถ้ามี) มิฉะนั้นใช้ที่ AI แนะนำ
+    const validTypes = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+    const userMealType = req.body.mealType;
+    const finalType = validTypes.includes(userMealType) ? userMealType
+      : validTypes.includes(aiResult.type) ? aiResult.type
+      : 'Lunch';
+
+    // บันทึกลง DB
+    await Meal.create({
+      userId: req.body.userId,
+      name: aiResult.name,
+      type: finalType,
+      calories: aiResult.calories,
+      protein: aiResult.protein,
+      carbs: aiResult.carbs,
+      fat: aiResult.fat,
+      water: aiResult.water,
+      date: (() => {
+        if (req.body.date) {
+          const [y, m, d] = req.body.date.split('-').map(Number);
+          return new Date(y, m - 1, d, 0, 0, 0, 0); // local time
+        }
+        return new Date();
+      })(),
+      time: new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }),
+      imageUrl: file.path,
+    });
+
+    // ลบไฟล์ชั่วคราว
+    fs.unlinkSync(file.path);
+
+    return res.json({ success: true, data: aiResult });
+
+  } catch (err) {
+    // พยายามลบไฟล์ถ้า error
+    try { if (file?.path) fs.unlinkSync(file.path); } catch {}
+    console.error('Analyze error:', err);
+    return res.status(500).json({ error: 'Analyze failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // CONNECT DB → START SERVER
 // ═════════════════════════════════════════════════════════════════════════════
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected → nutriai_db');
     app.listen(PORT, () => {
-      console.log(`✅ Backend running  → http://localhost:${PORT}`);
+      console.log(`\u2705 Backend running  → http://localhost:${PORT}`);
     });
   })
   .catch(err => {

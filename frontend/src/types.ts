@@ -31,3 +31,9 @@ export interface UserStats {
   steps: number;
   stepGoal: number;
 }
+export interface AddMealModalProps {
+  userId: string;
+  onClose: () => void;
+  onAdded: () => void;
+  selectedDate: Date;
+}

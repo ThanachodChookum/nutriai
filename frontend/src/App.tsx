@@ -6,7 +6,7 @@ import {
   ChevronRight, User, LogOut, Menu, X, Eye, EyeOff, ArrowRight,
   Leaf, Loader2, Trash2, Dumbbell, Scale, Timer, Check,
 } from 'lucide-react';
-import { Message } from './types';
+import { Message, AddMealModalProps } from './types';
 
 interface DBMeal {
   _id: string;
@@ -195,85 +195,296 @@ function LoginPage({ onLogin }: { onLogin: (id: string, name: string) => void })
 // ═════════════════════════════════════════════════════════════════════════════
 // ADD MEAL MODAL
 // ═════════════════════════════════════════════════════════════════════════════
-function AddMealModal({ userId, onClose, onAdded }: { userId: string; onClose: () => void; onAdded: () => void }) {
+function AddMealModal({ userId, onClose, onAdded, selectedDate }: AddMealModalProps) {
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
-    name: '', type: 'Breakfast' as DBMeal['type'],
-    calories: '', protein: '', carbs: '', fat: '', water: '',
-  });
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<{ name: string; calories: number; protein: number; carbs: number; fat: number } | null>(null);
+  const [mealType, setMealType] = useState<'Breakfast' | 'Lunch' | 'Dinner' | 'Snack'>('Lunch');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const mealTypes = [
+    { value: 'Breakfast', label: '🌅 Breakfast (มื้อเช้า)' },
+    { value: 'Lunch',     label: '☀️ Lunch (มื้อกลางวัน)' },
+    { value: 'Dinner',    label: '🌙 Dinner (มื้อเย็น)' },
+    { value: 'Snack',     label: '🍎 Snack (ของว่าง)' },
+  ] as const;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSelect = (file: File | null) => {
+    if (!file) return;
+    setImage(file);
+    setPreview(URL.createObjectURL(file));
+    setUploadError(null);
+    setAiResult(null);
+  };
+
+  const handleUpload = async () => {
+    if (!image) return;
+    const formData = new FormData();
+    formData.append('image', image);
+    formData.append('userId', userId);
+    const localDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+    formData.append('date', localDate);
+    formData.append('mealType', mealType);
     setLoading(true);
+    setUploadError(null);
     try {
-      const now = new Date();
-      await fetch('/api/meals', {
+      const res = await fetch('http://localhost:3001/api/analyze-food', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId, name: form.name, type: form.type,
-          calories: Number(form.calories) || 0, protein: Number(form.protein) || 0,
-          carbs: Number(form.carbs) || 0, fat: Number(form.fat) || 0, water: Number(form.water) || 0,
-          date: now.toISOString(),
-          time: now.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }),
-        }),
+        body: formData,
       });
-      onAdded();
-      onClose();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Upload failed');
+      setAiResult(data.data);
+      setTimeout(() => { onAdded(); onClose(); }, 1800);
+    } catch (err: any) {
+      setUploadError(err.message ?? 'Upload failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-black">Add Meal 🍽️</h3>
-          <button onClick={onClose} className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 transition-colors"><X className="size-4" /></button>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+
+        <div className="flex items-center justify-between">
+          <h3 className="font-black text-lg">📸 อัปโหลดรูปอาหาร</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400"><X className="size-5" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Meal Name</label>
-              <input name="name" value={form.name} onChange={handleChange} placeholder="Grilled Salmon" required
-                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Type</label>
-              <select name="type" value={form.type} onChange={handleChange}
-                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
-                {['Breakfast', 'Lunch', 'Dinner', 'Snack'].map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            {[
-              { name: 'calories', label: 'Calories (kcal)', placeholder: '450' },
-              { name: 'protein',  label: 'Protein (g)',     placeholder: '42'  },
-              { name: 'carbs',    label: 'Carbs (g)',       placeholder: '30'  },
-              { name: 'fat',      label: 'Fat (g)',         placeholder: '18'  },
-              { name: 'water',    label: 'Water (L)',       placeholder: '0.5' },
-            ].map(({ name, label, placeholder }) => (
-              <div key={name}>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">{label}</label>
-                <input name={name} type="number" min="0" step="0.1" value={(form as any)[name]} onChange={handleChange} placeholder={placeholder}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-              </div>
+
+        {/* Meal Type Selector */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">เลือกมื้ออาหาร</label>
+          <div className="grid grid-cols-4 gap-2">
+            {mealTypes.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setMealType(value)}
+                className={`py-2 px-1 rounded-xl text-xs font-bold transition-all border-2 ${
+                  mealType === value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-slate-200 dark:border-slate-600 text-slate-500 hover:border-primary/40'
+                }`}
+              >
+                {label.split(' ')[0]}<br />
+                <span className="font-normal text-[10px]">{value}</span>
+              </button>
             ))}
           </div>
-          <button type="submit" disabled={loading}
-            className="w-full py-3 bg-primary text-background-dark font-black rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform disabled:opacity-60 disabled:scale-100">
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <><Plus className="size-4" />Add Meal</>}
-          </button>
-        </form>
-      </motion.div>
+        </div>
+
+        {/* Image Upload Area */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">รูปอาหาร</label>
+          <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl cursor-pointer hover:border-primary/60 transition-all bg-slate-50 dark:bg-slate-700/50" style={{ minHeight: preview ? 0 : '8rem' }}>
+            {preview ? (
+              <img src={preview} className="rounded-xl w-full h-48 object-cover" />
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-8 text-slate-400">
+                <span className="text-3xl">📷</span>
+                <span className="text-xs font-medium">คลิกเพื่อเลือกรูปภาพ</span>
+              </div>
+            )}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSelect(e.target.files?.[0] || null)} />
+          </label>
+        </div>
+
+        {uploadError && (
+          <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-3">❌ {uploadError}</p>
+        )}
+
+        {aiResult && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-1">
+            <p className="font-bold text-green-700">✅ {aiResult.name}</p>
+            <p className="text-sm text-green-600">🔥 {aiResult.calories} kcal · P: {aiResult.protein}g · C: {aiResult.carbs}g · F: {aiResult.fat}g</p>
+          </motion.div>
+        )}
+
+        <button
+          onClick={handleUpload}
+          disabled={!image || loading || !!aiResult}
+          className="w-full bg-primary text-background-dark py-3 rounded-xl font-black disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+        >
+          {loading ? <><Loader2 className="size-4 animate-spin" />AI กำลังวิเคราะห์...</> : aiResult ? '✅ บันทึกแล้ว!' : <><Plus className="size-4" />Upload & Analyze</>}
+        </button>
+      </div>
     </div>
   );
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// CALENDAR COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
+function CalendarPicker({ selectedDate, setSelectedDate, meals }: {
+  selectedDate: Date;
+  setSelectedDate: (d: Date) => void;
+  meals: DBMeal[];
+}) {
+  const [viewDate, setViewDate] = useState(new Date(selectedDate));
+  const [popupDay, setPopupDay] = useState<Date | null>(null);
+
+  const mealTypeColor: Record<string, string> = {
+    Breakfast: 'bg-yellow-400', Lunch: 'bg-blue-400', Dinner: 'bg-purple-400', Snack: 'bg-emerald-400',
+  };
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+
+  // Build a map of dateStr -> meals
+  const mealsByDate: Record<string, DBMeal[]> = {};
+  meals.forEach(m => {
+    const d = new Date(m.date);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!mealsByDate[key]) mealsByDate[key] = [];
+    mealsByDate[key].push(m);
+  });
+
+  const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
+
+  const popupMeals = popupDay
+    ? mealsByDate[`${popupDay.getFullYear()}-${popupDay.getMonth()}-${popupDay.getDate()}`] ?? []
+    : [];
+
+  const weekDays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+  return (
+    <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={prevMonth} className="size-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 transition-colors">‹</button>
+        <h4 className="font-black text-sm">
+          {viewDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+        </h4>
+        <button onClick={nextMonth} className="size-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 transition-colors">›</button>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {weekDays.map(d => (
+          <div key={d} className="text-center text-[10px] font-bold text-slate-400 py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Days grid */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const cellDate = new Date(year, month, day);
+          const dateKey = `${year}-${month}-${day}`;
+          const dayMeals = mealsByDate[dateKey] ?? [];
+          const isToday = cellDate.toDateString() === today.toDateString();
+          const isSelected = cellDate.toDateString() === selectedDate.toDateString();
+          const hasMeals = dayMeals.length > 0;
+
+          return (
+            <button
+              key={day}
+              onClick={() => {
+                setSelectedDate(cellDate);
+                if (hasMeals) setPopupDay(cellDate);
+              }}
+              className={`relative flex flex-col items-center justify-start p-1 rounded-xl min-h-[48px] transition-all group ${
+                isSelected
+                  ? 'bg-primary text-background-dark shadow-md shadow-primary/30'
+                  : isToday
+                  ? 'bg-primary/10 text-primary'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span className={`text-xs font-black leading-none mb-0.5 ${
+                isSelected ? 'text-background-dark' : isToday ? 'text-primary' : ''
+              }`}>{day}</span>
+              {/* Meal dots */}
+              {hasMeals && (
+                <div className="flex gap-0.5 flex-wrap justify-center max-w-full">
+                  {dayMeals.slice(0, 3).map((m, idx) => (
+                    <div key={idx} className={`size-1.5 rounded-full ${isSelected ? 'bg-background-dark/60' : mealTypeColor[m.type] ?? 'bg-slate-400'}`} />
+                  ))}
+                  {dayMeals.length > 3 && <div className={`size-1.5 rounded-full ${isSelected ? 'bg-background-dark/40' : 'bg-slate-300'}`} />}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+        {(['Breakfast','Lunch','Dinner','Snack'] as const).map(t => (
+          <div key={t} className="flex items-center gap-1">
+            <div className={`size-2 rounded-full ${mealTypeColor[t]}`} />
+            <span className="text-[10px] text-slate-400">{t[0]}</span>
+          </div>
+        ))}
+        <span className="text-[10px] text-slate-400 ml-auto">กดวันเพื่อดูมื้ออาหาร</span>
+      </div>
+
+      {/* Day Popup */}
+      <AnimatePresence>
+        {popupDay && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setPopupDay(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="font-black text-lg">
+                    {popupDay.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    รวม {popupMeals.reduce((a, m) => a + m.calories, 0)} kcal
+                  </p>
+                </div>
+                <button onClick={() => setPopupDay(null)} className="size-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400">
+                  <X className="size-5" />
+                </button>
+              </div>
+              {popupMeals.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Utensils className="size-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">ไม่มีมื้ออาหารที่บันทึก</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {popupMeals.map(m => (
+                    <div key={m._id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50">
+                      <div className={`size-10 rounded-xl ${mealTypeColor[m.type] ?? 'bg-slate-400'} flex items-center justify-center text-base shrink-0`}>
+                        {m.type === 'Breakfast' ? '🌅' : m.type === 'Lunch' ? '☀️' : m.type === 'Dinner' ? '🌙' : '🍎'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm truncate">{m.name}</p>
+                        <div className="flex gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span className="text-primary font-bold">{m.calories} kcal</span>
+                          <span>P:{m.protein}g</span>
+                          <span>C:{m.carbs}g</span>
+                          <span>F:{m.fat}g</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 shrink-0">{m.time}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // HEALTH PROFILE TAB
@@ -298,9 +509,9 @@ function HealthProfileTab({ userId }: { userId: string }) {
           setResult({ bmi: data.bmi, bmr: data.bmr, tdee: data.tdee, protein: data.protein, carbs: data.carbs, fat: data.fat, water: data.water });
           setSaved(true);
         }
-      }).catch(() => {});
+      }).catch(() => { });
   }, [userId]);
-
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
@@ -323,11 +534,11 @@ function HealthProfileTab({ userId }: { userId: string }) {
     } catch {
       // fallback คำนวณ local
       const bmi = w / ((h / 100) ** 2);
-      const bmr = form.gender === 'male' ? 88.362 + 13.397*w + 4.799*h - 5.677*a : 447.593 + 9.247*w + 3.098*h - 4.330*a;
+      const bmr = form.gender === 'male' ? 88.362 + 13.397 * w + 4.799 * h - 5.677 * a : 447.593 + 9.247 * w + 3.098 * h - 4.330 * a;
       const tdee = bmr * act;
       const protein = w * 2;
       const fat = (tdee * 0.25) / 9;
-      const carbs = (tdee - protein*4 - fat*9) / 4;
+      const carbs = (tdee - protein * 4 - fat * 9) / 4;
       const water = w * 0.033;
       setResult({ bmi, bmr, tdee, protein, carbs, fat, water });
     } finally {
@@ -337,17 +548,17 @@ function HealthProfileTab({ userId }: { userId: string }) {
 
   const getBMIStatus = (bmi: number) => {
     if (bmi < 18.5) return { label: 'Underweight', color: 'text-blue-500' };
-    if (bmi < 25)   return { label: 'Normal', color: 'text-primary' };
-    if (bmi < 30)   return { label: 'Overweight', color: 'text-yellow-500' };
+    if (bmi < 25) return { label: 'Normal', color: 'text-primary' };
+    if (bmi < 30) return { label: 'Overweight', color: 'text-yellow-500' };
     return { label: 'Obese', color: 'text-red-500' };
   };
 
   const activityLevels = [
-    { value: '1.2',  label: 'Sedentary (no exercise)' },
+    { value: '1.2', label: 'Sedentary (no exercise)' },
     { value: '1.375', label: 'Light (1-3 days/week)' },
     { value: '1.55', label: 'Moderate (3-5 days/week)' },
     { value: '1.725', label: 'Active (6-7 days/week)' },
-    { value: '1.9',  label: 'Very Active (2x/day)' },
+    { value: '1.9', label: 'Very Active (2x/day)' },
   ];
 
   return (
@@ -364,7 +575,7 @@ function HealthProfileTab({ userId }: { userId: string }) {
           {[
             { name: 'weight', label: 'น้ำหนัก (kg)', placeholder: '65' },
             { name: 'height', label: 'ส่วนสูง (cm)', placeholder: '170' },
-            { name: 'age',    label: 'อายุ (ปี)',     placeholder: '25' },
+            { name: 'age', label: 'อายุ (ปี)', placeholder: '25' },
           ].map(({ name, label, placeholder }) => (
             <div key={name}>
               <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">{label}</label>
@@ -443,8 +654,8 @@ function HealthProfileTab({ userId }: { userId: string }) {
             <div className="space-y-4">
               {[
                 { label: 'Protein', value: Math.round(result.protein), unit: 'g', color: 'bg-primary', pct: Math.round((result.protein * 4 / result.tdee) * 100) },
-                { label: 'Carbs',   value: Math.round(result.carbs),   unit: 'g', color: 'bg-blue-500', pct: Math.round((result.carbs * 4 / result.tdee) * 100) },
-                { label: 'Fat',     value: Math.round(result.fat),     unit: 'g', color: 'bg-orange-500', pct: Math.round((result.fat * 9 / result.tdee) * 100) },
+                { label: 'Carbs', value: Math.round(result.carbs), unit: 'g', color: 'bg-blue-500', pct: Math.round((result.carbs * 4 / result.tdee) * 100) },
+                { label: 'Fat', value: Math.round(result.fat), unit: 'g', color: 'bg-orange-500', pct: Math.round((result.fat * 9 / result.tdee) * 100) },
               ].map(({ label, value, unit, color, pct }) => (
                 <div key={label} className="space-y-1.5">
                   <div className="flex justify-between text-xs font-medium">
@@ -497,7 +708,7 @@ function ExerciseLogTab({ userId }: { userId: string }) {
         duration: e.duration, calories: e.calories,
         sets: e.sets, reps: e.reps, time: e.time,
       })));
-    } catch {}
+    } catch { }
   }, [userId]);
 
   useEffect(() => {
@@ -698,20 +909,31 @@ function ExerciseLogTab({ userId }: { userId: string }) {
 // MAIN APP
 // ═════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [userId, setUserId]               = useState<string | null>(null);
-  const [userName, setUserName]           = useState('Alex Rivera');
-  const [activeTab, setActiveTab]         = useState<'dashboard' | 'chat' | 'health' | 'exercise'>('dashboard');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState('Alex Rivera');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'chat' | 'health' | 'exercise'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [showAddMeal, setShowAddMeal]     = useState(false);
-  const [meals, setMeals]                 = useState<DBMeal[]>([]);
-  const [summary, setSummary]             = useState<DailySummary>({ calories: 0, protein: 0, carbs: 0, fat: 0, water: 0 });
-  const [loadingMeals, setLoadingMeals]   = useState(false);
-  const [messages, setMessages]           = useState<Message[]>([
+  const [showAddMeal, setShowAddMeal] = useState(false);
+  const [meals, setMeals] = useState<DBMeal[]>([]);
+  const [summary, setSummary] = useState<DailySummary>({ calories: 0, protein: 0, carbs: 0, fat: 0, water: 0 });
+  const [loadingMeals, setLoadingMeals] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([
     { id: '1', role: 'assistant', content: "Hello! I'm your personal AI nutritionist. Log your meals and I'll help you reach your nutrition goals! 🥗", timestamp: new Date() },
   ]);
   const [input, setInput] = useState('');
 
-  const goals = { calorie: 2200, protein: 160, carbs: 250, fat: 70, water: 3.0 };
+  const [healthProfile, setHealthProfile] = useState<{
+    tdee: number; protein: number; carbs: number; fat: number; water: number;
+  } | null>(null);
+
+  // ค่า default ถ้ายังไม่ได้ตั้งค่า Health Profile
+  const goals = {
+    calorie: Math.round(healthProfile?.tdee ?? 2200),
+    protein: Math.round(healthProfile?.protein ?? 160),
+    carbs:   Math.round(healthProfile?.carbs ?? 250),
+    fat:     Math.round(healthProfile?.fat ?? 70),
+    water:   Number((healthProfile?.water ?? 3.0).toFixed(1)),
+  };
 
   useEffect(() => {
     const id = localStorage.getItem('nutriai_userId');
@@ -719,29 +941,45 @@ export default function App() {
     if (id) { setUserId(id); if (name) setUserName(name); }
   }, []);
 
+  // ดึง Health Profile เมื่อ login สำเร็จ
+  useEffect(() => {
+    if (!userId || userId === 'demo') return;
+    fetch(`/api/health/${userId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.tdee) {
+          setHealthProfile({
+            tdee: data.tdee,
+            protein: data.protein,
+            carbs: data.carbs,
+            fat: data.fat,
+            water: data.water,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [userId]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const fetchMeals = useCallback(async () => {
     if (!userId || userId === 'demo') return;
     setLoadingMeals(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await fetch(`/api/meals?userId=${userId}&date=${today}`);
+      const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+      const res = await fetch(`/api/meals?userId=${userId}&date=${dateStr}`);
       const data = await res.json();
       setMeals(data.meals ?? []);
       setSummary(data.summary ?? { calories: 0, protein: 0, carbs: 0, fat: 0, water: 0 });
     } catch (err) {
-      console.error('Fetch meals error:', err);
+      console.error(err);
     } finally {
       setLoadingMeals(false);
     }
-  }, [userId]);
-
+  }, [userId, selectedDate]);
   useEffect(() => {
     fetchMeals();
-    const interval = setInterval(fetchMeals, 30000);
-    return () => clearInterval(interval);
   }, [fetchMeals]);
 
-  const handleLogin  = (id: string, name: string) => { setUserId(id); setUserName(name); };
+  const handleLogin = (id: string, name: string) => { setUserId(id); setUserName(name); };
   const handleLogout = () => {
     localStorage.removeItem('nutriai_userId');
     localStorage.removeItem('nutriai_userName');
@@ -801,9 +1039,9 @@ export default function App() {
 
   const displayMeals = userId === 'demo'
     ? [
-        { _id: 'd1', name: 'Quinoa Buddha Bowl', type: 'Lunch'  as const, calories: 380, protein: 15, carbs: 45, fat: 12, water: 0, time: '12:30 PM', date: '' },
-        { _id: 'd2', name: 'Lemon Herb Salmon',  type: 'Dinner' as const, calories: 450, protein: 42, carbs: 8,  fat: 22, water: 0, time: '7:00 PM',  date: '' },
-      ]
+      { _id: 'd1', name: 'Quinoa Buddha Bowl', type: 'Lunch' as const, calories: 380, protein: 15, carbs: 45, fat: 12, water: 0, time: '12:30 PM', date: '' },
+      { _id: 'd2', name: 'Lemon Herb Salmon', type: 'Dinner' as const, calories: 450, protein: 42, carbs: 8, fat: 22, water: 0, time: '7:00 PM', date: '' },
+    ]
     : meals;
 
   const mealTypeColor: Record<string, string> = {
@@ -815,7 +1053,12 @@ export default function App() {
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <AnimatePresence>
         {showAddMeal && userId !== 'demo' && (
-          <AddMealModal userId={userId} onClose={() => setShowAddMeal(false)} onAdded={fetchMeals} />
+          <AddMealModal
+            userId={userId}
+            selectedDate={selectedDate}
+            onClose={() => setShowAddMeal(false)}
+            onAdded={fetchMeals}
+          />
         )}
       </AnimatePresence>
 
@@ -831,10 +1074,10 @@ export default function App() {
         <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
           <div className="text-[10px] uppercase font-bold text-slate-400 px-3 mb-2">Main Menu</div>
           {([
-            { id: 'dashboard', label: 'Dashboard',         Icon: Menu          },
-            { id: 'chat',      label: 'AI Chat Assistant', Icon: MessageSquare },
-            { id: 'health',    label: 'Health Profile',    Icon: Activity      },
-            { id: 'exercise',  label: 'Exercise Log',      Icon: Dumbbell      },
+            { id: 'dashboard', label: 'Dashboard', Icon: Menu },
+            { id: 'chat', label: 'AI Chat Assistant', Icon: MessageSquare },
+            { id: 'health', label: 'Health Profile', Icon: Activity },
+            { id: 'exercise', label: 'Exercise Log', Icon: Dumbbell },
           ] as const).map(({ id, label, Icon }) => (
             <button key={id} onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${activeTab === id ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
@@ -893,8 +1136,8 @@ export default function App() {
                 {/* ── Stats: Calories + Hydration only ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
-                    { label: 'Calories',  value: displaySummary.calories, unit: 'kcal', goal: goals.calorie, color: 'bg-primary',  iconBg: 'bg-primary/10 text-primary',   Icon: Flame    },
-                    { label: 'Hydration', value: displaySummary.water,    unit: 'L',    goal: goals.water,   color: 'bg-blue-500', iconBg: 'bg-blue-500/10 text-blue-500', Icon: Droplets },
+                    { label: 'Calories', value: displaySummary.calories, unit: 'kcal', goal: goals.calorie, color: 'bg-primary', iconBg: 'bg-primary/10 text-primary', Icon: Flame },
+                    { label: 'Hydration', value: displaySummary.water, unit: 'L', goal: goals.water, color: 'bg-blue-500', iconBg: 'bg-blue-500/10 text-blue-500', Icon: Droplets },
                   ].map(({ label, value, unit, goal, color, iconBg, Icon }) => (
                     <div key={label} className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-sm">
                       <div className="flex items-center gap-3 mb-4">
@@ -916,12 +1159,27 @@ export default function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {/* Meals list */}
                   <div className="lg:col-span-2 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xl font-bold">Today's Meals</h3>
-                      <div className="flex items-center gap-2">
-                        {loadingMeals && <Loader2 className="size-4 animate-spin text-primary" />}
-                        <span className="text-xs text-slate-400">{displayMeals.length} meals logged</span>
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xl font-bold">
+                          {selectedDate.toDateString() === new Date().toDateString()
+                            ? "Today's Meals"
+                            : "Selected Day Meals"}
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          {loadingMeals && <Loader2 className="size-4 animate-spin text-primary" />}
+                          <span className="text-xs text-slate-400">
+                            {displayMeals.length} meals logged
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Calendar */}
+                      <CalendarPicker
+                        selectedDate={selectedDate}
+                        setSelectedDate={setSelectedDate}
+                        meals={meals}
+                      />
                     </div>
                     {displayMeals.length === 0 ? (
                       <div className="bg-white dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-12 text-center">
@@ -967,9 +1225,9 @@ export default function App() {
                     <h3 className="text-xl font-bold">Nutrient Breakdown</h3>
                     <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl space-y-5">
                       {[
-                        { label: 'Protein', consumed: displaySummary.protein, goal: goals.protein, color: 'bg-primary'    },
-                        { label: 'Carbs',   consumed: displaySummary.carbs,   goal: goals.carbs,   color: 'bg-blue-500'  },
-                        { label: 'Fat',     consumed: displaySummary.fat,     goal: goals.fat,     color: 'bg-orange-500' },
+                        { label: 'Protein', consumed: displaySummary.protein, goal: goals.protein, color: 'bg-primary' },
+                        { label: 'Carbs', consumed: displaySummary.carbs, goal: goals.carbs, color: 'bg-blue-500' },
+                        { label: 'Fat', consumed: displaySummary.fat, goal: goals.fat, color: 'bg-orange-500' },
                       ].map(({ label, consumed, goal, color }) => (
                         <div key={label} className="space-y-1.5">
                           <div className="flex justify-between text-xs font-medium">
