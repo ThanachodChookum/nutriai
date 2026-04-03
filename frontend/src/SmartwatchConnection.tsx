@@ -18,10 +18,8 @@ export function SmartwatchConnection({
   onHeartRateUpdate, 
   onMetricsUpdate 
 }: SmartwatchConnectionProps) {
-  const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [currentDevice, setCurrentDevice] = useState<DeviceInfo | null>(null);
   const [currentHeartRate, setCurrentHeartRate] = useState<number | null>(null);
   const [heartRateHistory, setHeartRateHistory] = useState<number[]>([]);
@@ -30,57 +28,36 @@ export function SmartwatchConnection({
 
   const isBluetoothSupported = 'bluetooth' in navigator;
 
-  const scanDevices = async () => {
+  const connectToDevice = async () => {
     if (!isBluetoothSupported) {
       setError('เบราว์เซอร์ของคุณไม่รองรับ Bluetooth Web API');
       return;
     }
 
-    setIsScanning(true);
-    setError(null);
-    
-    try {
-      const foundDevices = await bluetoothService.scanForDevices();
-      setDevices(foundDevices);
-      if (foundDevices.length === 0) {
-        setError('ไม่พบอุปกรณ์ กรุณาตรวจสอบ Bluetooth และลองอีกครั้ง');
-      }
-    } catch (err: any) {
-      setError(err.message || 'ไม่สามารถสแกนหาอุปกรณ์ได้');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const connectDevice = async (device: DeviceInfo) => {
     setIsConnecting(true);
     setError(null);
     
     try {
-      const success = await bluetoothService.connect(device.id);
+      const device = await bluetoothService.connect();
       
-      if (success) {
-        setIsConnected(true);
-        setCurrentDevice(device);
+      setIsConnected(true);
+      setCurrentDevice(device);
+      
+      localStorage.setItem(`nutriai_watch_${userId}`, JSON.stringify({
+        deviceId: device.id,
+        deviceName: device.name,
+        deviceType: device.deviceType,
+        connectedAt: new Date().toISOString(),
+      }));
+      
+      bluetoothService.onHeartRateChange((data: HeartRateData) => {
+        setCurrentHeartRate(data.heartRate);
+        setHeartRateHistory(prev => [...prev.slice(-20), data.heartRate]);
         
-        localStorage.setItem(`nutriai_watch_${userId}`, JSON.stringify({
-          deviceId: device.id,
-          deviceName: device.name,
-          deviceType: device.deviceType,
-          connectedAt: new Date().toISOString(),
-        }));
-        
-        bluetoothService.onHeartRateChange((data: HeartRateData) => {
-          setCurrentHeartRate(data.heartRate);
-          setHeartRateHistory(prev => [...prev.slice(-20), data.heartRate]);
-          
-          if (onHeartRateUpdate) {
-            onHeartRateUpdate(data.heartRate);
-          }
-        });
-      } else {
-        setError('ไม่สามารถเชื่อมต่อกับอุปกรณ์ได้');
-      }
+        if (onHeartRateUpdate) {
+          onHeartRateUpdate(data.heartRate);
+        }
+      });
     } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
     } finally {
@@ -127,9 +104,9 @@ export function SmartwatchConnection({
       try {
         const device = JSON.parse(savedDevice);
         setCurrentDevice(device);
-        setTimeout(() => {
-          connectDevice(device);
-        }, 1000);
+        // Note: Web Bluetooth requires a user gesture for connection,
+        // so we cannot automatically re-connect here on page load.
+        // We just restore the UI state to remind the user of their last device.
       } catch (e) {}
     }
   }, [userId]);
@@ -173,16 +150,16 @@ export function SmartwatchConnection({
           </button>
         ) : (
           <button
-            onClick={scanDevices}
-            disabled={isScanning}
+            onClick={connectToDevice}
+            disabled={isConnecting}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center gap-1"
           >
-            {isScanning ? (
+            {isConnecting ? (
               <Loader2 className="size-3 animate-spin" />
             ) : (
               <Bluetooth className="size-3" />
             )}
-            ค้นหาอุปกรณ์
+            เชื่อมต่ออุปกรณ์
           </button>
         )}
       </div>
@@ -234,43 +211,7 @@ export function SmartwatchConnection({
         </motion.div>
       )}
 
-      <AnimatePresence>
-        {devices.length > 0 && !isConnected && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-4 space-y-2 overflow-hidden"
-          >
-            <p className="text-xs font-bold text-slate-400 mb-2">
-              อุปกรณ์ที่พบ ({devices.length})
-            </p>
-            {devices.map(device => (
-              <button
-                key={device.id}
-                onClick={() => connectDevice(device)}
-                disabled={isConnecting}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 hover:bg-primary/10 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="size-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                    <Watch className="size-4 text-primary" />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-bold">{device.name}</p>
-                    <p className="text-[10px] text-slate-400">{device.deviceType}</p>
-                  </div>
-                </div>
-                {isConnecting ? (
-                  <Loader2 className="size-4 animate-spin text-primary" />
-                ) : (
-                  <span className="text-primary text-xs font-bold">เชื่อมต่อ</span>
-                )}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       {!isConnected && (
         <button
