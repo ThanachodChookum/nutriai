@@ -899,12 +899,12 @@ function ActivityRings({ metrics }: { metrics: WatchMetrics }) {
   );
 }
 
-function HRZoneBar({ zones }: { zones: HRZones }) {
+function HRZoneBar() {
   const items = [
-    { label: 'Zone 1', name: 'Rest',     pct: zones.zone1, color: 'bg-blue-400',   pill: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-    { label: 'Zone 2', name: 'Fat burn', pct: zones.zone2, color: 'bg-green-400',  pill: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-    { label: 'Zone 3', name: 'Cardio',   pct: zones.zone3, color: 'bg-yellow-400', pill: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' },
-    { label: 'Zone 4', name: 'Peak',     pct: zones.zone4, color: 'bg-red-400',    pill: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+    { label: 'Zone 1', name: 'Rest',     pct: 25,  range: '< 100', color: 'bg-blue-400',   pill: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+    { label: 'Zone 2', name: 'Fat burn', pct: 50,  range: '100-119', color: 'bg-green-400',  pill: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+    { label: 'Zone 3', name: 'Cardio',   pct: 75,  range: '120-149', color: 'bg-yellow-400', pill: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' },
+    { label: 'Zone 4', name: 'Peak',     pct: 100, range: '≥ 150', color: 'bg-red-400',    pill: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   ];
   return (
     <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-5">
@@ -912,7 +912,7 @@ function HRZoneBar({ zones }: { zones: HRZones }) {
         <Heart className="size-4 text-red-500" /> Heart Rate Zones
       </h4>
       <div className="space-y-3">
-        {items.map(({ label, name, pct, color, pill }) => (
+        {items.map(({ label, name, pct, range, color, pill }) => (
           <div key={label} className="flex items-center gap-3">
             <span className="text-xs text-slate-400 w-12 shrink-0">{label}</span>
             <div className="flex-1 h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -923,7 +923,7 @@ function HRZoneBar({ zones }: { zones: HRZones }) {
                 className={`h-full ${color} rounded-full`}
               />
             </div>
-            <span className="text-xs text-slate-500 w-8 text-right shrink-0">{pct}%</span>
+            <span className="text-[10px] text-slate-500 w-[45px] text-right shrink-0">{range}</span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${pill} shrink-0 w-16 text-center`}>{name}</span>
           </div>
         ))}
@@ -1276,20 +1276,10 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
           source: e.source ?? 'watch',
         })));
       } else {
-        const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
-        const mockActivities = MOCK_DATA[mockKey as DeviceId].activities.map((a, i) => ({
-          ...a,
-          id: `${selectedDevice}_${i}`,
-        }));
-        setExercises(mockActivities);
+        setExercises([]);
       }
     } catch {
-      const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
-      const mockActivities = MOCK_DATA[mockKey as DeviceId].activities.map((a, i) => ({
-        ...a,
-        id: `${selectedDevice}_${i}`,
-      }));
-      setExercises(mockActivities);
+      setExercises([]);
     }
   }, [userId, selectedDevice]);
 
@@ -1400,7 +1390,7 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
         newMetrics.exerciseMinutes = 0;
         
         setMetrics(newMetrics);
-        setExercises(fresh.activities.map((a, i) => ({ ...a, id: `${selectedDevice}_${i}` })));
+        await fetchExercises();
       } else {
         await new Promise(r => setTimeout(r, 1800));
         const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
@@ -1440,6 +1430,14 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
   const handleAddWorkout = async (entry: Omit<ExerciseEntry, 'id'>) => {
     const newId = `manual_${Date.now()}`;
     const newEntry: ExerciseEntry = { ...entry, id: newId };
+    
+    // อัปเดตตัวเลขวงแหวนและ Summary ก่อนทันที (Optimistic update)
+    setMetrics(prev => ({
+      ...prev,
+      caloriesBurned: prev.caloriesBurned + entry.calories,
+      exerciseMinutes: prev.exerciseMinutes + entry.duration,
+    }));
+
     if (userId && userId !== 'demo') {
       try {
         const res = await fetch('/api/exercises', {
@@ -1451,14 +1449,13 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
           await fetchExercises();
           return;
         }
-      } catch {}
+      } catch (err) {
+        console.error('Failed to save to database:', err);
+      }
     }
+    
+    // กรณีที่ผิดพลาดหรือไม่ล็อกอิน จะใช้วิธีเพิ่มเข้า State ตรงๆ
     setExercises(prev => [...prev, newEntry]);
-    setMetrics(prev => ({
-      ...prev,
-      caloriesBurned: prev.caloriesBurned + entry.calories,
-      exerciseMinutes: prev.exerciseMinutes + entry.duration,
-    }));
   };
 
   const totalCalories = exercises.reduce((a, e) => a + e.calories, 0);
@@ -1595,7 +1592,7 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
       {/* ── Activity Rings + HR Zones ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ActivityRings metrics={metrics} />
-        <HRZoneBar zones={metrics.hrZones} />
+        <HRZoneBar />
       </div>
 
       {/* ── Today's Workouts ── */}

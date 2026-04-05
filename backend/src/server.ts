@@ -122,18 +122,28 @@ interface IExercise extends Document {
   name: string; type: string;
   duration: number; calories: number;
   sets?: number; reps?: number;
+  avgHeartRate?: number; peakHeartRate?: number;
+  distance?: number; pace?: string;
+  hrZones?: { zone1?: number; zone2?: number; zone3?: number; zone4?: number };
+  source?: string;
   date: Date; time: string;
 }
 const Exercise = mongoose.model<IExercise>('Exercise', new Schema<IExercise>({
-  userId:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  name:     { type: String, required: true },
-  type:     { type: String, default: 'Cardio' },
-  duration: { type: Number, default: 0 },
-  calories: { type: Number, default: 0 },
-  sets:     { type: Number },
-  reps:     { type: Number },
-  date:     { type: Date, default: Date.now },
-  time:     { type: String, default: '' },
+  userId:        { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  name:          { type: String, required: true },
+  type:          { type: String, default: 'Cardio' },
+  duration:      { type: Number, default: 0 },
+  calories:      { type: Number, default: 0 },
+  sets:          { type: Number },
+  reps:          { type: Number },
+  avgHeartRate:  { type: Number },
+  peakHeartRate: { type: Number },
+  distance:      { type: Number },
+  pace:          { type: String },
+  hrZones:       { type: Schema.Types.Mixed },
+  source:        { type: String, default: 'manual' },
+  date:          { type: Date, default: Date.now },
+  time:          { type: String, default: '' },
 }, { timestamps: true }));
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -346,7 +356,10 @@ app.post('/api/exercises', async (req: Request, res: Response) => {
       time: req.body.time ?? now.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }),
     });
     return res.status(201).json(exercise);
-  } catch { return res.status(400).json({ error: 'Failed to create exercise' }); }
+  } catch (err) { 
+    console.error('Failed to create exercise', err);
+    return res.status(400).json({ error: 'Failed to create exercise' }); 
+  }
 });
 
 app.delete('/api/exercises/:id', async (req: Request, res: Response) => {
