@@ -24,6 +24,7 @@ class BluetoothService {
   private device: BluetoothDevice | null = null;
   private heartRateCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private heartRateListener: ((data: HeartRateData) => void) | null = null;
+  private metricsListener: ((data: any) => void) | null = null;
   private isConnected: boolean = false;
  // ✅ เพิ่ม method isSupported
   isSupported(): boolean {
@@ -117,6 +118,16 @@ class BluetoothService {
         heartRate,
         timestamp: new Date(),
       });
+      
+      // Since we don't have real Steps or Sleep data from standard Bluetooth GATT,
+      // we only send null or undefined for them.
+      if (this.metricsListener) {
+        this.metricsListener({
+          steps: null,
+          calories: null,
+          sleepHours: null
+        });
+      }
     }
   }
 
@@ -137,6 +148,10 @@ class BluetoothService {
 
   onHeartRateChange(callback: (data: HeartRateData) => void) {
     this.heartRateListener = callback;
+  }
+
+  onMetricsChange(callback: (data: any) => void) {
+    this.metricsListener = callback;
   }
 
   disconnect() {

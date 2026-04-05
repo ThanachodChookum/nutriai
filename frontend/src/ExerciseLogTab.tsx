@@ -462,15 +462,7 @@ export function ExerciseLogTab({ userId, onHeartRateUpdate }: ExerciseLogTabProp
 
   const totalCalories = exercises.reduce((a, e) => a + e.calories, 0);
   const totalDuration = exercises.reduce((a, e) => a + e.duration, 0);
-  const lastSyncStr = lastSync.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
-  const devices = [
-    { id: 'apple_watch', name: 'Apple Watch', model: 'Series 9' },
-    { id: 'garmin', name: 'Garmin', model: 'Forerunner 265' },
-    { id: 'samsung', name: 'Samsung', model: 'Galaxy Watch 6' },
-    { id: 'fitbit', name: 'Fitbit', model: 'Charge 6' },
-    { id: 'mi_band', name: 'Mi Band', model: 'Mi Band 8' },
-  ];
 
     return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -486,45 +478,23 @@ export function ExerciseLogTab({ userId, onHeartRateUpdate }: ExerciseLogTabProp
           }));
           if (onHeartRateUpdate) onHeartRateUpdate(hr);
         }}
+        onCaloriesUpdate={(deltaCal) => {
+          setMetrics(prev => ({
+            ...prev,
+            caloriesBurned: prev.caloriesBurned + deltaCal
+          }));
+        }}
+        onMetricsUpdate={(newMetrics) => {
+          setMetrics(prev => {
+            const updated = { ...prev };
+            if (newMetrics.steps !== undefined) updated.steps = newMetrics.steps;
+            if (newMetrics.sleepHours !== undefined) updated.sleepHours = newMetrics.sleepHours;
+            return updated;
+          });
+        }}
       />
 
-      {/* Device Selector */}
-      <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="size-9 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Watch className="size-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-bold">Device Settings</p>
-              <p className="text-[11px] text-slate-400">เลือกอุปกรณ์สำหรับซิงค์ข้อมูล</p>
-            </div>
-          </div>
-          <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${connected ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
-            {connected ? <><Wifi className="size-3" />Connected</> : <><WifiOff className="size-3" />Disconnected</>}
-          </div>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {devices.map(device => (
-            <button
-              key={device.id}
-              onClick={() => setSelectedDevice(device.id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                selectedDevice === device.id
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-primary/40 hover:text-primary'
-              }`}
-            >
-              <div className={`size-1.5 rounded-full ${selectedDevice === device.id ? 'bg-primary' : 'bg-slate-300'}`} />
-              {device.name}
-              {selectedDevice === device.id && <span className="text-[10px] font-normal opacity-70">({device.model})</span>}
-            </button>
-          ))}
-        </div>
-        <p className="text-[11px] text-slate-400 mt-3">
-          ซิงค์ล่าสุด: {lastSyncStr} · ข้อมูลจะอัปเดตอัตโนมัติทุก 15 นาที
-        </p>
-      </div>
+
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

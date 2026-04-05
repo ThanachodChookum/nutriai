@@ -932,7 +932,7 @@ function HRZoneBar({ zones }: { zones: HRZones }) {
   );
 }
 
-function WorkoutCard({ ex, onDelete, userId }: { ex: ExerciseEntry; onDelete: (id: string) => void; userId: string }) {
+function WorkoutCard({ ex, onDelete }: { ex: ExerciseEntry; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
 
   const typeConfig: Record<string, { bg: string; emoji: string; badge: string }> = {
@@ -974,14 +974,13 @@ function WorkoutCard({ ex, onDelete, userId }: { ex: ExerciseEntry; onDelete: (i
           <span className="text-xs text-slate-400">{ex.time}</span>
           <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${cfg.badge}`}>{ex.type}</span>
           <ChevronRight className={`size-4 text-slate-300 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-          {userId !== 'demo' && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(ex.id); }}
-              className="size-7 rounded-lg bg-red-50 text-red-400 items-center justify-center hidden group-hover:flex hover:bg-red-100"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(ex.id); }}
+            className="size-7 rounded-lg bg-red-50 text-red-400 items-center justify-center hidden group-hover:flex hover:bg-red-100 transition-colors"
+            title="ลบ workout นี้"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
         </div>
       </div>
 
@@ -1060,6 +1059,168 @@ function WorkoutCard({ ex, onDelete, userId }: { ex: ExerciseEntry; onDelete: (i
   );
 }
 
+// ─── Add Workout Modal ────────────────────────────────────────────────────────
+function AddWorkoutModal({ onClose, onAdd }: { onClose: () => void; onAdd: (entry: Omit<ExerciseEntry, 'id'>) => void }) {
+  const [form, setForm] = useState({
+    name: '',
+    type: 'Running',
+    duration: '',
+    calories: '',
+    avgHeartRate: '',
+    distance: '',
+    time: new Date().toTimeString().slice(0, 5),
+  });
+  const types = ['Running', 'Strength', 'Yoga', 'Cycling', 'HIIT', 'Swimming', 'Cardio', 'Other'];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.duration || !form.calories) return;
+    onAdd({
+      name: form.name,
+      type: form.type,
+      duration: Number(form.duration),
+      calories: Number(form.calories),
+      avgHeartRate: form.avgHeartRate ? Number(form.avgHeartRate) : undefined,
+      distance: form.distance ? Number(form.distance) : undefined,
+      time: form.time,
+      source: 'manual',
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h3 className="font-bold text-base">เพิ่ม Workout ใหม่ 💪</h3>
+            <p className="text-xs text-slate-400 mt-0.5">บันทึกการออกกำลังกายด้วยตัวเอง</p>
+          </div>
+          <button onClick={onClose} className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors" aria-label="ปิด">
+            ✕
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">ชื่อ Workout *</label>
+            <input
+              id="workout-name"
+              type="text"
+              placeholder="เช่น Morning Run, Chest Day"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">ประเภท *</label>
+              <select
+                id="workout-type"
+                value={form.type}
+                onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+              >
+                {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">เวลาเริ่ม</label>
+              <input
+                id="workout-time"
+                type="time"
+                value={form.time}
+                onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">ระยะเวลา (นาที) *</label>
+              <input
+                id="workout-duration"
+                type="number"
+                min="1"
+                placeholder="30"
+                value={form.duration}
+                onChange={e => setForm(f => ({ ...f, duration: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">แคลอรี่เผาผลาญ *</label>
+              <input
+                id="workout-calories"
+                type="number"
+                min="1"
+                placeholder="200"
+                value={form.calories}
+                onChange={e => setForm(f => ({ ...f, calories: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">Heart Rate เฉลี่ย (bpm)</label>
+              <input
+                id="workout-hr"
+                type="number"
+                min="40"
+                max="220"
+                placeholder="120"
+                value={form.avgHeartRate}
+                onChange={e => setForm(f => ({ ...f, avgHeartRate: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">ระยะทาง (km)</label>
+              <input
+                id="workout-distance"
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="5.0"
+                value={form.distance}
+                onChange={e => setForm(f => ({ ...f, distance: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              id="workout-submit"
+              className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+            >
+              บันทึก Workout ✓
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function ExerciseLogTab({ userId }: { userId: string }) {
   const [selectedDevice, setSelectedDevice] = useState<string>('apple_watch');
@@ -1069,6 +1230,7 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
   const [metrics, setMetrics] = useState<WatchMetrics>(MOCK_DATA.apple_watch.metrics);
   const [exercises, setExercises] = useState<ExerciseEntry[]>([]);
   const [showSetup, setShowSetup] = useState(false);
+  const [showAddWorkout, setShowAddWorkout] = useState(false);
   const [customDevices, setCustomDevices] = useState<any[]>([]);
 
   const loadCustomDevices = useCallback(() => {
@@ -1222,12 +1384,40 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
   };
 
   const handleDelete = async (id: string) => {
-    if (userId !== 'demo') {
-      await fetch(`/api/exercises/${id}`, { method: 'DELETE' });
-      await fetchExercises();
+    if (userId && userId !== 'demo') {
+      try {
+        await fetch(`/api/exercises/${id}`, { method: 'DELETE' });
+        await fetchExercises();
+      } catch {
+        setExercises(prev => prev.filter(e => e.id !== id));
+      }
     } else {
       setExercises(prev => prev.filter(e => e.id !== id));
     }
+  };
+
+  const handleAddWorkout = async (entry: Omit<ExerciseEntry, 'id'>) => {
+    const newId = `manual_${Date.now()}`;
+    const newEntry: ExerciseEntry = { ...entry, id: newId };
+    if (userId && userId !== 'demo') {
+      try {
+        const res = await fetch('/api/exercises', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, ...entry, date: new Date().toISOString().split('T')[0] }),
+        });
+        if (res.ok) {
+          await fetchExercises();
+          return;
+        }
+      } catch {}
+    }
+    setExercises(prev => [...prev, newEntry]);
+    setMetrics(prev => ({
+      ...prev,
+      caloriesBurned: prev.caloriesBurned + entry.calories,
+      exerciseMinutes: prev.exerciseMinutes + entry.duration,
+    }));
   };
 
   const totalCalories = exercises.reduce((a, e) => a + e.calories, 0);
@@ -1292,21 +1482,6 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {DEVICES.map(device => (
-            <button
-              key={device.id}
-              onClick={() => setSelectedDevice(device.id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                selectedDevice === device.id
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-primary/40 hover:text-primary'
-              }`}
-            >
-              <div className={`size-1.5 rounded-full ${selectedDevice === device.id ? 'bg-primary' : 'bg-slate-300'}`} />
-              {device.name}
-              {selectedDevice === device.id && <span className="text-[10px] font-normal opacity-70">({device.model})</span>}
-            </button>
-          ))}
           {customDevices.map(device => (
             <button
               key={device.id}
@@ -1381,12 +1556,21 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
             <TrendingUp className="size-4 text-primary" /> Today's Workouts
             <span className="text-xs font-normal text-slate-400">({exercises.length} activities)</span>
           </h3>
-          {exercises.length > 0 && (
-            <div className="flex gap-4 text-xs text-slate-400">
-              <span className="flex items-center gap-1"><Flame className="size-3 text-red-400" />{totalCalories} kcal</span>
-              <span className="flex items-center gap-1"><Timer className="size-3 text-blue-400" />{totalDuration} min</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {exercises.length > 0 && (
+              <div className="flex gap-4 text-xs text-slate-400">
+                <span className="flex items-center gap-1"><Flame className="size-3 text-red-400" />{totalCalories} kcal</span>
+                <span className="flex items-center gap-1"><Timer className="size-3 text-blue-400" />{totalDuration} min</span>
+              </div>
+            )}
+            <button
+              id="add-workout-btn"
+              onClick={() => setShowAddWorkout(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors"
+            >
+              <span className="text-base leading-none">+</span> เพิ่ม Workout
+            </button>
+          </div>
         </div>
 
         {syncing ? (
@@ -1395,19 +1579,32 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
             <span className="text-sm text-slate-400">กำลังซิงค์ข้อมูลจาก {DEVICES.find(d => d.id === selectedDevice)?.name}...</span>
           </div>
         ) : exercises.length === 0 ? (
-          <div className="bg-white dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-16 text-center">
+          <div className="bg-white dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-12 text-center">
             <Watch className="size-12 mx-auto text-slate-300 mb-3" />
             <p className="font-bold text-slate-400">ยังไม่มี workout วันนี้</p>
-            <p className="text-xs text-slate-400 mt-1">สวม {DEVICES.find(d => d.id === selectedDevice)?.name} แล้วกด Sync Now</p>
+            <p className="text-xs text-slate-400 mt-1">สวม {DEVICES.find(d => d.id === selectedDevice)?.name} แล้วกด Sync Now หรือกด เพิ่ม Workout</p>
+            <button
+              onClick={() => setShowAddWorkout(true)}
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+            >
+              <span className="text-base leading-none">+</span> เพิ่ม Workout แรก
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
             {exercises.map(ex => (
-              <WorkoutCard key={ex.id} ex={ex} onDelete={handleDelete} userId={userId} />
+              <WorkoutCard key={ex.id} ex={ex} onDelete={handleDelete} />
             ))}
           </div>
         )}
       </div>
+
+      {/* ── Add Workout Modal ── */}
+      <AnimatePresence>
+        {showAddWorkout && (
+          <AddWorkoutModal onClose={() => setShowAddWorkout(false)} onAdd={handleAddWorkout} />
+        )}
+      </AnimatePresence>
 
       {/* ── Insight Banner ── */}
       {!syncing && exercises.length > 0 && (
