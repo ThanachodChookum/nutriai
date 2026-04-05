@@ -10,7 +10,7 @@ import {
 import { Message, AddMealModalProps } from './types';
 import {
   RefreshCw, Wifi, WifiOff, Watch, Heart,
-  Footprints, Moon, TrendingUp, Settings
+  Footprints, Moon, TrendingUp, Settings, Edit2
 } from 'lucide-react';
 import { SmartwatchSetupPage } from './components/SmartwatchSetupPage';
 import { bluetoothService } from './service/BluetoothService';
@@ -1741,6 +1741,24 @@ export default function App() {
     await fetch(`/api/meals/${id}`, { method: 'DELETE' });
     fetchMeals();
   };
+
+  const handleEditMealName = async (id: string, currentName: string) => {
+    const newName = prompt('แก้ไขชื่ออาหาร (Edit Meal Name):', currentName);
+    if (!newName || newName.trim() === '' || newName === currentName) return;
+
+    try {
+      const res = await fetch(`/api/meals/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      if (res.ok) {
+        fetchMeals();
+      }
+    } catch (err) {
+      console.error('Failed to update meal name:', err);
+    }
+  };
   const [chatLoading, setChatLoading] = useState(false);
 
   const handleSendMessage = async (text?: string) => {
@@ -1949,7 +1967,18 @@ export default function App() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
-                                <p className="font-bold text-sm truncate">{meal.name}</p>
+                                <div className="flex items-center gap-2 max-w-[70%]">
+                                  <p className="font-bold text-sm truncate">{meal.name}</p>
+                                  {userId !== 'demo' && (
+                                    <button 
+                                      onClick={() => handleEditMealName(meal._id, meal.name)}
+                                      className="text-slate-400 hover:text-primary transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                      title="Edit Name"
+                                    >
+                                      <Edit2 className="size-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                                 <span className="text-xs text-slate-400 shrink-0 ml-2">{meal.time}</span>
                               </div>
                               <div className="flex gap-3 text-[10px] text-slate-400 mt-1">

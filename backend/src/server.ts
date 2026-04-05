@@ -223,6 +223,17 @@ app.delete('/api/meals/:id', async (req: Request, res: Response) => {
   catch { return res.status(500).json({ error: 'Failed to delete meal' }); }
 });
 
+app.patch('/api/meals/:id', async (req: Request, res: Response) => {
+  try {
+    const updated = await Meal.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Meal not found' });
+    return res.json(updated);
+  } catch (err) {
+    console.error('Update meal error:', err);
+    return res.status(500).json({ error: 'Failed to update meal' });
+  }
+});
+
 // ── Recipes ───────────────────────────────────────────────────────────────────
 app.get('/api/recipes', async (req: Request, res: Response) => {
   const { tag } = req.query;
