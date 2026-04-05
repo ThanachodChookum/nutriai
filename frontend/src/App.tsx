@@ -883,8 +883,8 @@ function ActivityRings({ metrics }: { metrics: WatchMetrics }) {
         </svg>
         <div className="space-y-3 flex-1 min-w-[160px]">
           {[
-            { label: 'Move', value: `${metrics.caloriesBurned} / ${metrics.caloriesGoal} kcal`, color: 'bg-red-500' },
-            { label: 'Exercise', value: `${metrics.exerciseMinutes} / ${metrics.exerciseGoal} min`, color: 'bg-green-500' },
+            { label: 'Move', value: `${Math.floor(metrics.caloriesBurned)} / ${metrics.caloriesGoal} kcal`, color: 'bg-red-500' },
+            { label: 'Exercise', value: `${Math.floor(metrics.exerciseMinutes)} / ${metrics.exerciseGoal} min`, color: 'bg-green-500' },
             { label: 'Stand', value: `${metrics.standHours} / ${metrics.standGoal} hr`, color: 'bg-blue-500' },
           ].map(({ label, value, color }) => (
             <div key={label} className="flex items-center gap-3">
@@ -1224,7 +1224,7 @@ function AddWorkoutModal({ onClose, onAdd }: { onClose: () => void; onAdd: (entr
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function ExerciseLogTab({ userId }: { userId: string }) {
   const [selectedDevice, setSelectedDevice] = useState<string>('apple_watch');
-  const [connected, setConnected] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [metrics, setMetrics] = useState<WatchMetrics>(MOCK_DATA.apple_watch.metrics);
@@ -1300,6 +1300,16 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
     const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
     let newMetrics = { ...MOCK_DATA[mockKey as DeviceId].metrics };
     
+    // รีเซ็ตค่า Live Data เป็น 0 เมื่อเริ่มโหลด
+    newMetrics.caloriesBurned = 0;
+    newMetrics.exerciseMinutes = 0;
+    
+    // ตั้งค่าหัวใจเป็น 0 หากยังไม่เชื่อมต่อ
+    if (!connected) {
+      newMetrics.avgHeartRate = 0;
+      newMetrics.peakHeartRate = 0;
+    }
+    
     const cDev = customDevices.find(d => d.id === selectedDevice);
     if (cDev && cDev.metrics) {
       if (cDev.metrics.heartRate) {
@@ -1312,35 +1322,55 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
 
   // ซิงค์ค่า Heart Rate อัตโนมัติ (real-time & demo simulated)
   useEffect(() => {
+    // Keytel Formula สำหรับคำนวณแคลอรี่ต่อวินาที (อ้างอิง: อายุ 25, หนัก 65, ชาย)
+    const calcCaloriesPerSec = (hr: number) => {
+      const calPerMin = (-55.0969 + (0.6309 * hr) + (0.1988 * 65) + (0.2017 * 25)) / 4.184;
+      return Math.max(0, calPerMin / 60); 
+    };
+
     if (!showSetup) {
       bluetoothService.onHeartRateChange((data) => {
-        setMetrics((prev) => ({
-          ...prev,
-          avgHeartRate: data.heartRate,
-          peakHeartRate: Math.max(prev.peakHeartRate, data.heartRate),
-        }));
+        setMetrics((prev) => {
+          const isHRActive = data.heartRate > 90;
+          const addedCal = isHRActive ? calcCaloriesPerSec(data.heartRate) : 0;
+          return {
+            ...prev,
+            avgHeartRate: data.heartRate,
+            peakHeartRate: Math.max(prev.peakHeartRate, data.heartRate),
+            caloriesBurned: prev.caloriesBurned + addedCal,
+            exerciseMinutes: isHRActive ? prev.exerciseMinutes + (1 / 60) : prev.exerciseMinutes,
+          };
+        });
       });
     }
 
     let interval: ReturnType<typeof setInterval>;
     const isMockDevice = ['apple_watch', 'garmin', 'samsung', 'fitbit', 'mi_band'].includes(selectedDevice);
-    if (userId === 'demo' || isMockDevice) {
+    // ทำงานเมื่อมีการเชื่อมต่อแล้ว (connected)
+    if ((userId === 'demo' || isMockDevice) && connected) {
       let currentHr = 80;
       interval = setInterval(() => {
         currentHr += Math.floor(Math.random() * 7) - 3;
         currentHr = Math.min(160, Math.max(65, currentHr));
-        setMetrics((prev) => ({
-          ...prev,
-          avgHeartRate: currentHr,
-          peakHeartRate: Math.max(prev.peakHeartRate, currentHr),
-        }));
+        setMetrics((prev) => {
+          // interval ทำงานทุก 3.5 วินาที
+          const isHRActive = currentHr > 90;
+          const addedCal = isHRActive ? calcCaloriesPerSec(currentHr) * 3.5 : 0;
+          return {
+            ...prev,
+            avgHeartRate: currentHr,
+            peakHeartRate: Math.max(prev.peakHeartRate, currentHr),
+            caloriesBurned: prev.caloriesBurned + addedCal,
+            exerciseMinutes: isHRActive ? prev.exerciseMinutes + (3.5 / 60) : prev.exerciseMinutes,
+          };
+        });
       }, 3500);
     }
     
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [userId, selectedDevice, showSetup]);
+  }, [userId, selectedDevice, showSetup, connected]);
 
   // Sync handler — เรียก /api/exercises/sync จริง หรือ simulate
   const handleSync = async () => {
@@ -1365,13 +1395,21 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
         if (cDev && cDev.metrics && cDev.metrics.heartRate) {
            newMetrics.avgHeartRate = cDev.metrics.heartRate;
         }
+        // รีเซตหลัง sync เพราะเราแสดงผลแบบ Live
+        newMetrics.caloriesBurned = 0;
+        newMetrics.exerciseMinutes = 0;
+        
         setMetrics(newMetrics);
         setExercises(fresh.activities.map((a, i) => ({ ...a, id: `${selectedDevice}_${i}` })));
       } else {
         await new Promise(r => setTimeout(r, 1800));
         const mockKey = MOCK_DATA[selectedDevice as DeviceId] ? selectedDevice : 'apple_watch';
         const fresh = MOCK_DATA[mockKey as DeviceId];
-        setMetrics(fresh.metrics);
+        let newMetrics = { ...fresh.metrics };
+        newMetrics.caloriesBurned = 0;
+        newMetrics.exerciseMinutes = 0;
+
+        setMetrics(newMetrics);
         setExercises(fresh.activities.map((a, i) => ({ ...a, id: `${selectedDevice}_${i}` })));
       }
       setLastSync(new Date());
@@ -1384,15 +1422,18 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
   };
 
   const handleDelete = async (id: string) => {
+    // ลบออกจากหน้าจอก่อนทันที (Optimistic update)
+    setExercises((prev) => prev.filter((e) => e.id !== id));
+
+    // หากเป็นไอดีแบบมี _ (เช่น apple_watch_0, manual_1234) ให้ข้ามช่วงเชื่อมต่อ API และถือว่าลบเสร็จสิ้นแล้ว
+    if (id.includes('_')) return;
+
     if (userId && userId !== 'demo') {
       try {
         await fetch(`/api/exercises/${id}`, { method: 'DELETE' });
-        await fetchExercises();
-      } catch {
-        setExercises(prev => prev.filter(e => e.id !== id));
+      } catch (err) {
+        console.error('Failed to delete exercise from server', err);
       }
-    } else {
-      setExercises(prev => prev.filter(e => e.id !== id));
     }
   };
 
@@ -1475,10 +1516,18 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
               <p className="text-[11px] text-slate-400">เลือกอุปกรณ์ที่เชื่อมต่อ</p>
             </div>
           </div>
-          <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${connected ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
-            {connected
-              ? <><Wifi className="size-3" />Connected</>
-              : <><WifiOff className="size-3" />Disconnected</>}
+          <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full ${
+            syncing
+              ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
+              : connected 
+                ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' 
+                : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'
+          }`}>
+            {syncing
+              ? <><Loader2 className="size-3 animate-spin" />Connecting...</>
+              : connected
+                ? <><Wifi className="size-3" />Connected</>
+                : <><WifiOff className="size-3" />Disconnected</>}
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -1513,18 +1562,18 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Calories burned', value: metrics.caloriesBurned, unit: 'kcal', goal: metrics.caloriesGoal, Icon: Flame, color: 'bg-red-500/10 text-red-500' },
-          { label: 'Avg heart rate',  value: metrics.avgHeartRate,   unit: 'bpm',  goal: null, Icon: Heart, color: 'bg-pink-500/10 text-pink-500', sub: `Peak: ${metrics.peakHeartRate} bpm` },
-          { label: 'Steps',           value: metrics.steps.toLocaleString(), unit: '', goal: metrics.stepsGoal, Icon: Footprints, color: 'bg-blue-500/10 text-blue-500', isSteps: true },
-          { label: 'Sleep',           value: metrics.sleepHours,     unit: 'hr',   goal: null, Icon: Moon, color: 'bg-indigo-500/10 text-indigo-500', sub: `REM: ${metrics.sleepRem} hr` },
-        ].map(({ label, value, unit, goal, Icon, color, sub, isSteps }) => (
+          { label: 'Live Calories', value: metrics.caloriesBurned, unit: 'kcal', goal: metrics.caloriesGoal, Icon: Flame, color: 'bg-red-500/10 text-red-500', isNumeric: true },
+          { label: 'Live Heart Rate', value: metrics.avgHeartRate, unit: 'bpm', goal: null, Icon: Heart, color: 'bg-pink-500/10 text-pink-500', sub: `Peak: ${metrics.peakHeartRate} bpm`, isNumeric: false },
+          { label: 'Current HR Zone', value: metrics.avgHeartRate < 100 ? 'Rest' : metrics.avgHeartRate < 120 ? 'Fat Burn' : metrics.avgHeartRate < 150 ? 'Cardio' : 'Peak', unit: '', goal: null, Icon: Activity, color: 'bg-blue-500/10 text-blue-500', isZone: true },
+          { label: 'Active Time', value: metrics.exerciseMinutes, unit: 'min', goal: metrics.exerciseGoal, Icon: Timer, color: 'bg-indigo-500/10 text-indigo-500', isNumeric: true },
+        ].map(({ label, value, unit, goal, Icon, color, sub, isZone, isNumeric }) => (
           <div key={label} className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4">
             <div className={`size-9 rounded-xl ${color} flex items-center justify-center mb-3`}>
               <Icon className="size-4" />
             </div>
             <p className="text-[11px] text-slate-400 mb-1">{label}</p>
             <p className="text-xl font-black">
-              {isSteps ? value : typeof value === 'number' ? value < 10 ? value.toFixed(1) : value : value}
+              {isZone ? value : typeof value === 'number' ? (isNumeric ? Math.floor(value) : value.toFixed(0)) : value}
               <span className="text-xs font-normal text-slate-400 ml-1">{unit}</span>
             </p>
             {goal && (
@@ -1532,10 +1581,10 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
                 <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all duration-700"
-                    style={{ width: `${Math.min(isSteps ? (metrics.steps / goal) * 100 : (Number(value) / goal) * 100, 100)}%` }}
+                    style={{ width: `${Math.min((Number(value) / goal) * 100, 100)}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Goal: {isSteps ? goal.toLocaleString() : goal}{unit}</p>
+                <p className="text-[10px] text-slate-400 mt-1">Goal: {goal}{unit}</p>
               </div>
             )}
             {sub && <p className="text-[10px] text-slate-400 mt-1">{sub}</p>}
@@ -1606,31 +1655,7 @@ export function ExerciseLogTab({ userId }: { userId: string }) {
         )}
       </AnimatePresence>
 
-      {/* ── Insight Banner ── */}
-      {!syncing && exercises.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-primary/5 border border-primary/20 rounded-2xl p-4 flex items-start gap-3"
-        >
-          <div className="size-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-            <Zap className="size-4 text-primary" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-primary">AI Insight</p>
-            <p className="text-xs text-slate-500 mt-1">
-              วันนี้คุณออกกำลังกายรวม <strong className="text-slate-700 dark:text-slate-300">{totalDuration} นาที</strong> เผาผลาญ <strong className="text-slate-700 dark:text-slate-300">{totalCalories} kcal</strong>
-              {metrics.hrZones.zone3 + metrics.hrZones.zone4 > 40
-                ? ' — ยอดเยี่ยม! ใช้เวลาใน Cardio/Peak zone มาก หัวใจแข็งแรงขึ้นแน่นอน 💪'
-                : ' — ลองเพิ่ม intensity ขึ้นนิดนึงเพื่อเข้า Cardio zone นานขึ้น 🔥'}
-            </p>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-primary font-bold shrink-0">
-            <Wind className="size-3" />
-            <span>Smart</span>
-          </div>
-        </motion.div>
-      )}
+
     </div>
   );
 }
