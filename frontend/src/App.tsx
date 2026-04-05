@@ -1670,7 +1670,7 @@ export default function App() {
   const [summary, setSummary] = useState<DailySummary>({ calories: 0, protein: 0, carbs: 0, fat: 0, water: 0 });
   const [loadingMeals, setLoadingMeals] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', content: "Hello! I'm your personal AI nutritionist. Log your meals and I'll help you reach your nutrition goals! 🥗", timestamp: new Date() },
+    { id: '1', role: 'assistant', content: "สวัสดี! ฉันคือผู้ช่วยนักโภชนาการ AI ส่วนตัวของคุณ บันทึกมื้ออาหารของคุณแล้วฉันจะช่วยแนะนำโภชนาการให้คุณเอง! 🥗", timestamp: new Date() },
   ]);
   const [input, setInput] = useState('');
 
@@ -2072,14 +2072,14 @@ export default function App() {
                       <textarea value={input} onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                         className="flex-1 bg-transparent border-none focus:ring-0 text-slate-900 dark:text-slate-100 resize-none py-2 px-2 max-h-32 text-sm outline-none"
-                        placeholder="Ask about ingredients, recipes, or nutrition..." rows={1} disabled={chatLoading} />
+                        placeholder="ถามเกี่ยวกับเมนูอาหาร โภชนาการ หรือการออกกำลังกาย..." rows={1} disabled={chatLoading} />
                       <button onClick={() => handleSendMessage()} disabled={chatLoading || !input.trim()}
                         className="size-10 bg-primary text-background-dark rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0 disabled:opacity-50 disabled:scale-100">
                         {chatLoading ? <Loader2 className="size-4 animate-spin" /> : <ChevronRight className="size-5" />}
                       </button>
                     </div>
                     <div className="flex gap-2 mt-3 justify-center flex-wrap">
-                      {['Low Carb Meals', 'High Protein Ideas', 'Vegan Options', 'Exercise Ideas', 'Exercise Planning'].map(tag => (
+                      {['อาหารคาร์บต่ำ', 'ไอเดียเมนูโปรตีนสูง', 'เมนูมังสวิรัติ', 'ไอเดียออกกำลังกาย', 'ตารางออกกำลังกาย'].map(tag => (
                         <button key={tag} onClick={() => handleSendMessage(tag)} disabled={chatLoading}
                           className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50">{tag}</button>
                       ))}

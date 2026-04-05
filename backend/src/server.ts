@@ -270,7 +270,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'You are NutriAI, a friendly personal AI nutritionist. Give concise practical advice about nutrition, meal planning, recipes, healthy eating, and exercise. Use emojis occasionally. Keep responses under 200 words unless a recipe is requested.' },
+          { role: 'system', content: 'You are NutriAI, a friendly personal AI nutritionist. Speak Thai by default. However, if the user explicitly asks to communicate in English or another language, you must switch and reply in that requested language. Give concise practical advice about nutrition, meal planning, recipes, healthy eating, and exercise. Use emojis occasionally. Keep responses under 200 words unless a recipe is requested.' },
           ...history.map((h: any) => ({
             role: h.role === 'model' ? 'assistant' : h.role,
             content: h.parts?.[0]?.text ?? h.content ?? '',
